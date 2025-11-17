@@ -1,0 +1,10 @@
+{
+  "name": "ai-calendar-copilot-api",
+  "version": "1.0.0",
+  "description": "Minimal backend for AI Calendar Copilot - /api/parse-event endpoint",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"No tests yet\""
+  },
+  "license": "MIT"
+}
