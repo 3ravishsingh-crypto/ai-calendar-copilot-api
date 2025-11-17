@@ -1,26 +1,20 @@
 // api/parse-event.js
-// Vercel Node.js Function (Manifest v3-friendly backend)
-// Docs: Vercel builds any file inside /api as a serverless function using the Node.js runtime. :contentReference[oaicite:7]{index=7}
+// Vercel Node.js Function for AI Calendar Copilot
+// Handles POST /api/parse-event and returns structured calendar event JSON.
 
 /**
- * Helper: common headers so browsers (and your future Chrome extension)
- * can call this endpoint without CORS errors.
+ * Build CORS + JSON headers
  */
 function buildHeaders() {
   return {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",            // TODO: tighten later if you want
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type"
   };
 }
 
-// The Node.js runtime uses the `fetch`-style default export for functions.
 export default {
-  /**
-   * Handles all HTTP methods at /api/parse-event
-   * We'll use POST for real work and OPTIONS for CORS preflight.
-   */
   async fetch(request) {
     const headers = buildHeaders();
 
@@ -31,42 +25,105 @@ export default {
 
     if (request.method !== "POST") {
       return new Response(
-        JSON.stringify({ error: "Only POST is supported at /api/parse-event" }),
+        JSON.stringify({ error: "Only POST is supported" }),
         { status: 405, headers }
       );
     }
 
+    // Parse incoming JSON
     let text = "";
     try {
       const body = await request.json();
       text = typeof body.text === "string" ? body.text : "";
     } catch (err) {
-      // If JSON is invalid, return a 400 error
       return new Response(
-        JSON.stringify({ error: "Invalid JSON body", details: String(err) }),
+        JSON.stringify({ error: "Invalid JSON", details: String(err) }),
         { status: 400, headers }
       );
     }
 
-    // Hard-coded example event for now (MVP dummy logic).
-    // Later we'll swap this logic out with an LLM.
-    const exampleEvent = {
-      title: "Sync with Shraddha about AI Calendar Copilot",
-      date: "2025-11-20",             // YYYY-MM-DD
-      time: "10:00",                  // 24h HH:mm
-      durationMinutes: 60,
-      guests: [
-        {
-          name: "Shraddha Patel",
-          email: "shrddhptl5@gmail.com"
-        }
-      ],
-      description:
-        "Discuss AI Calendar Copilot roadmap, milestones, and next steps.",
-      originalText: text || ""
-    };
+    if (!process.env.OPENAI_API_KEY) {
+      return new Response(
+        JSON.stringify({ error: "Missing OPENAI_API_KEY" }),
+        { status: 500, headers }
+      );
+    }
 
-    return new Response(JSON.stringify(exampleEvent, null, 2), {
+    // --- LLM CALL -----------------------------------------------------------
+    let parsed = null;
+
+    try {
+      const openaiRes = await fetch(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: `
+Your job is to extract calendar event details from natural language text.
+You MUST extract **every person mentioned** unless the text explicitly excludes them.
+
+Rules:
+- If text says “add X”, “include X”, “invite X”, “with X”, then X MUST be included in guests.
+- If multiple people are mentioned, include ALL of them.
+- Do NOT infer people not mentioned (do NOT assume spouse, coworkers, etc.).
+- If email is not explicitly given, ask for the email.
+- Do NOT hallucinate details.
+- Output ONLY valid JSON (no explanation, no commentary).
+
+Return this structure:
+
+{
+  "title": string,
+  "date": string | null,              // YYYY-MM-DD
+  "time": string | null,              // HH:mm (24h)
+  "durationMinutes": number | null,
+  "guests": [
+    { "name": string, "email": string | null }
+  ],
+  "description": string | null,
+  "originalText": string
+}
+`
+              },
+              {
+                role: "user",
+                content: text
+              }
+            ],
+            temperature: 0
+          })
+        }
+      );
+
+      const result = await openaiRes.json();
+
+      // Model returns JSON as a string — parse it
+      const raw = result.choices?.[0]?.message?.content || "{}";
+      parsed = JSON.parse(raw);
+
+    } catch (err) {
+      return new Response(
+        JSON.stringify({
+          error: "LLM parsing failed",
+          details: String(err)
+        }),
+        { status: 500, headers }
+      );
+    }
+    // ------------------------------------------------------------------------
+
+    // Always keep original text
+    parsed.originalText = text;
+
+    return new Response(JSON.stringify(parsed, null, 2), {
       status: 200,
       headers
     });
