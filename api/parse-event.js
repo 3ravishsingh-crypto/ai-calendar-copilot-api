@@ -74,7 +74,7 @@ Rules:
 - If text says “add X”, “include X”, “invite X”, “with X”, then X MUST be included in guests.
 - If multiple people are mentioned, include ALL of them.
 - Do NOT infer people not mentioned (do NOT assume spouse, coworkers, etc.).
-- If email is not explicitly given, ask for the email.
+- If email is not explicitly given, assume the email is null.
 - Do NOT hallucinate details.
 - Output ONLY valid JSON (no explanation, no commentary).
 
